@@ -268,12 +268,10 @@ export default function Dashboard() {
       <div style={{ maxWidth: "1480px", margin: "0 auto", padding: "1.5rem 1.5rem 3rem" }}>
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexWrap: "wrap", gap: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <div style={{ background: "#fff", borderRadius: 14, padding: 6, boxShadow: "0 1px 3px rgba(16,24,40,.06)", display: "flex" }}>
-              <InfarmLogo size={44} />
-            </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <img src="/infarm-logo.png" alt="Infarm.id" style={{ height: 56, width: "auto", display: "block" }} />
             <div>
-              <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1, color: "#43B02A" }}>INFARM<span style={{ color: "#0098DA" }}>.ID</span></div>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: "#7A828D", textTransform: "uppercase" }}>Ads Audit</div>
               <div style={{ fontSize: 21, fontWeight: 700, color: "#1F2733", lineHeight: 1.2 }}>Dashboard Audit Iklan</div>
             </div>
           </div>
