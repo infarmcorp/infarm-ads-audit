@@ -277,7 +277,7 @@ export default function Dashboard() {
   const chartHead = (t) => (<div style={{ fontSize: 13, fontWeight: 700, color: ink, marginBottom: 12, letterSpacing: "-0.2px" }}>{t}</div>);
 
   return (
-    <div className="iaa" style={{ minHeight: "100vh", background: "#F6F8FB", backgroundImage: "radial-gradient(circle at 1px 1px, rgba(15,23,42,0.045) 1px, transparent 0)", backgroundSize: "22px 22px", color: ink }}>
+    <div className="iaa" style={{ minHeight: "100vh", background: "linear-gradient(180deg,#F7F9FC,#F3F6FA)", color: ink, position: "relative", overflowX: "hidden" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
         .iaa{font-family:'Inter',system-ui,-apple-system,sans-serif;}
@@ -296,7 +296,21 @@ export default function Dashboard() {
         .iaa ::-webkit-scrollbar-track{background:transparent;}
       `}</style>
 
-      <div style={{ maxWidth: "1480px", margin: "0 auto", padding: "1.75rem 1.5rem 3rem" }}>
+      <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: 0, overflow: "hidden", pointerEvents: "none" }}>
+        <div style={{ position: "absolute", top: -170, left: -130, width: 440, height: 440, borderRadius: "50%", background: "radial-gradient(circle,#FCD34D55,transparent 70%)", filter: "blur(40px)" }} />
+        <div style={{ position: "absolute", top: -130, right: -110, width: 380, height: 380, borderRadius: "50%", background: "radial-gradient(circle,#16A34A2E,transparent 70%)", filter: "blur(50px)" }} />
+        <svg width="100%" height="100%" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMin slice" style={{ position: "absolute", inset: 0 }}>
+          <g fill="#2F7D32">
+            <g style={{ opacity: .07, filter: "blur(7px)" }}><path transform="translate(180,70) rotate(28) scale(3.2)" d="M0,0 C22,-14 30,-46 0,-66 C-30,-46 -22,-14 0,0 Z" /></g>
+            <g style={{ opacity: .06, filter: "blur(8px)" }}><path transform="translate(90,250) rotate(-12) scale(3.8)" d="M0,0 C22,-14 30,-46 0,-66 C-30,-46 -22,-14 0,0 Z" /></g>
+            <g style={{ opacity: .05, filter: "blur(9px)" }}><path transform="translate(1300,120) rotate(195) scale(3.4)" d="M0,0 C22,-14 30,-46 0,-66 C-30,-46 -22,-14 0,0 Z" /></g>
+            <g style={{ opacity: .05, filter: "blur(10px)" }}><path transform="translate(1360,380) rotate(150) scale(4)" d="M0,0 C22,-14 30,-46 0,-66 C-30,-46 -22,-14 0,0 Z" /></g>
+            <g style={{ opacity: .045, filter: "blur(9px)" }}><path transform="translate(640,30) rotate(65) scale(2.6)" d="M0,0 C22,-14 30,-46 0,-66 C-30,-46 -22,-14 0,0 Z" /></g>
+          </g>
+        </svg>
+      </div>
+
+      <div style={{ maxWidth: "1480px", margin: "0 auto", padding: "1.75rem 1.5rem 3rem", position: "relative", zIndex: 1 }}>
 
         <div className="iaa-fade" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexWrap: "wrap", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
