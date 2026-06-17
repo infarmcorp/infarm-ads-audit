@@ -362,14 +362,15 @@ export default function Dashboard() {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
                 <tr style={{ background: "#fafafa", borderBottom: "1px solid #e5e5e5" }}>
-                  {["Platform", "SKU", "Omset", "Spend", "Net", "ROI", "ROAS", "Status", "Diagnosa", ""].map((h, i) => (
-                    <th key={i} style={{ padding: "10px 12px", textAlign: i === 0 || i === 1 || i === 8 ? "left" : "right", fontSize: 10, color: "#999", fontWeight: 600, textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
+                  {["Platform", "SKU", "Omset", "Profit", "Spend Ads", "Net Profit", "ROAS", "Target ROAS", ""].map((h, i) => (
+                    <th key={i} style={{ padding: "10px 12px", textAlign: i === 0 || i === 1 ? "left" : "right", fontSize: 10, color: "#999", fontWeight: 600, textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {displayed.map(e => {
                   const c = calc(e);
+                  const beRoas = Number(e.margin) > 0 ? 100 / Number(e.margin) : 0;
                   return (
                     <tr key={e.id} style={{ borderBottom: "1px solid #f0f0f0" }}>
                       <td style={{ padding: "10px 12px" }}>
@@ -377,14 +378,11 @@ export default function Dashboard() {
                       </td>
                       <td style={{ padding: "10px 12px", fontWeight: 600 }}>{e.sku}</td>
                       <td style={{ padding: "10px 12px", textAlign: "right" }}>{fmtShort(e.omset)}</td>
+                      <td style={{ padding: "10px 12px", textAlign: "right", color: "#222" }}>{fmtShort(c.profit)}</td>
                       <td style={{ padding: "10px 12px", textAlign: "right", color: "#F5A623" }}>{fmtShort(e.spend)}</td>
                       <td style={{ padding: "10px 12px", textAlign: "right", color: c.netProfit >= 0 ? "#0FA968" : "#E84040", fontWeight: 600 }}>{fmtShort(c.netProfit)}</td>
-                      <td style={{ padding: "10px 12px", textAlign: "right" }}>{c.roi}%</td>
-                      <td style={{ padding: "10px 12px", textAlign: "right" }}>{c.roas.toFixed(1)}x</td>
-                      <td style={{ padding: "10px 12px", textAlign: "right" }}>
-                        <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, fontWeight: 600, color: c.statusColor, background: c.statusBg }}>{c.status}</span>
-                      </td>
-                      <td style={{ padding: "10px 12px", fontSize: 11, color: "#666" }}>{c.diagnosa}</td>
+                      <td style={{ padding: "10px 12px", textAlign: "right", color: c.statusColor, fontWeight: 600 }}>{c.roas.toFixed(1)}x</td>
+                      <td style={{ padding: "10px 12px", textAlign: "right", color: "#666" }}>{beRoas > 0 ? beRoas.toFixed(1) + "x" : "—"}</td>
                       <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>
                         <button onClick={() => startEdit(e)} style={{ background: "none", border: "none", cursor: "pointer", color: "#666", fontSize: 14, marginRight: 6 }}>✎</button>
                         <button onClick={() => del(e.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#E84040", fontSize: 14 }}>🗑</button>
