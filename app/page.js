@@ -77,9 +77,9 @@ export default function Dashboard() {
   const [mode, setMode] = useState(null);
   const [form, setForm] = useState(EMPTY);
   const [editId, setEditId] = useState(null);
-  const [bulkText, setBulkText] = useState("");
   const [bulkPreview, setBulkPreview] = useState([]);
   const [bulkPlatform, setBulkPlatform] = useState("TikTok");
+  const [fileName, setFileName] = useState("");
   const [saved, setSaved] = useState(false);
 
   const fetchData = async () => {
@@ -133,17 +133,31 @@ export default function Dashboard() {
     }
   };
 
-  const parseBulk = () => {
-    const lines = bulkText.trim().split("\n").filter(l => l.trim());
-    const parsed = lines.map(line => {
-      const c = line.split("\t").map(x => x.trim().replace(/[Rp\s%]/g, "").replace(/\./g, "").replace(",", "."));
-      return {
-        platform: bulkPlatform, sku: c[0] || "", omset: c[1] || "", spend: c[2] || "",
-        order_count: c[3] || "", margin: c[4] || "", ctr: c[5] || "", cr: c[6] || "",
-        week: form.week, month: form.month, quarter: form.quarter
-      };
-    }).filter(e => e.sku);
-    setBulkPreview(parsed);
+  const handleExcelFile = async (file) => {
+    if (!file) return;
+    setFileName(file.name);
+    try {
+      setErrorMsg("");
+      const XLSX = await import('xlsx');
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf);
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true });
+      const parsed = rows.map(r => ({
+        platform: bulkPlatform,
+        sku: String(r[0] ?? "").trim(),
+        omset: r[1] ?? "", spend: r[2] ?? "", order_count: r[3] ?? "",
+        margin: r[4] ?? "", ctr: r[5] ?? "", cr: r[6] ?? "",
+        week: form.week, month: form.month, quarter: form.quarter,
+      })).filter(e => e.sku && Number.isFinite(Number(e.omset)));
+      if (parsed.length === 0) {
+        setErrorMsg("Tidak ada baris valid. Cek urutan kolom: SKU | Omset | Spend | Order | Margin | CTR | CR");
+        return;
+      }
+      setBulkPreview(parsed);
+    } catch (err) {
+      setErrorMsg("Gagal baca file Excel: " + err.message);
+    }
   };
 
   const confirmBulk = async () => {
@@ -153,7 +167,7 @@ export default function Dashboard() {
       const { error } = await supabase.from('ads_entries').insert(payload);
       if (error) throw error;
       await fetchData();
-      setBulkText(""); setBulkPreview([]); setMode(null); flash();
+      setBulkPreview([]); setFileName(""); setMode(null); flash();
     } catch (err) {
       setErrorMsg("Gagal import: " + err.message);
     }
@@ -242,38 +256,57 @@ export default function Dashboard() {
           ))}
         </div>
         <div style={{ display: "flex", gap: 6 }}>
-          <button onClick={() => setMode(mode === "bulk" ? null : "bulk")} style={tabBtn(mode === "bulk", "#0FA968")}>Bulk Paste</button>
+          <button onClick={() => { setMode(mode === "bulk" ? null : "bulk"); setBulkPreview([]); setFileName(""); }} style={tabBtn(mode === "bulk", "#0FA968")}>📁 Upload Excel</button>
           <button onClick={() => { setMode(mode === "single" ? null : "single"); setEditId(null); setForm(EMPTY); }} style={tabBtn(mode === "single", "#0FA968")}>+ Tambah SKU</button>
         </div>
       </div>
 
       {mode === "bulk" && (
         <div style={{ ...card, marginBottom: 12 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "#222", marginBottom: 12 }}>Bulk Paste dari Excel</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "#222", marginBottom: 12 }}>Upload Data dari File Excel</div>
           <div style={{ marginBottom: 10 }}>
             <span style={lbl}>Platform</span>
             <div style={{ display: "flex", gap: 6 }}>
               {PLATFORMS.map(p => (<button key={p} onClick={() => setBulkPlatform(p)} style={tabBtn(bulkPlatform === p, p === "TikTok" ? "#E84040" : "#EF7F00")}>{p}</button>))}
             </div>
           </div>
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 10 }}>
             <span style={lbl}>Periode</span>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {pOpts.map(opt => (<button key={opt} onClick={() => setForm(f => ({ ...f, [pField]: opt }))} style={tabBtn(form[pField] === opt, "#0FA968")}>{opt}</button>))}
             </div>
           </div>
-          <div style={{ padding: "8px 12px", background: "#fafafa", borderRadius: 6, fontSize: 11, color: "#666", marginBottom: 8 }}>
-            Urutan kolom → <strong>SKU | Omset | Spend | Order | Margin% | CTR% | CR%</strong>
+          <div style={{ padding: "8px 12px", background: "#fafafa", borderRadius: 6, fontSize: 11, color: "#666", marginBottom: 10 }}>
+            Urutan kolom di Excel → <strong>SKU | Omset | Spend | Order | Margin% | CTR% | CR%</strong>
           </div>
-          <textarea value={bulkText} onChange={e => { setBulkText(e.target.value); setBulkPreview([]); }}
-            placeholder={"NT-AKAR-100\t5000000\t500000\t120\t25\t2.5\t1.8"}
-            style={{ ...inp, height: 100, resize: "vertical", fontFamily: "monospace", fontSize: 12 }} />
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-            <button onClick={parseBulk} style={{ padding: "7px 16px", background: "#fafafa", border: "1px solid #ddd", borderRadius: 6, cursor: "pointer", fontSize: 12, color: "#333" }}>Preview</button>
-            {bulkPreview.length > 0 && (
-              <button onClick={confirmBulk} style={{ padding: "7px 18px", background: "#0FA96820", border: "1px solid #0FA968", borderRadius: 6, cursor: "pointer", fontSize: 12, color: "#0FA968", fontWeight: 600 }}>✓ Konfirmasi {bulkPreview.length} SKU</button>
-            )}
-          </div>
+          <label style={{ display: "block", textAlign: "center", padding: "26px 16px", background: "#0FA96810", border: "2px dashed #0FA968", borderRadius: 8, cursor: "pointer", fontSize: 14, color: "#0FA968", fontWeight: 600, marginBottom: 12 }}>
+            📁 Klik untuk pilih File Excel
+            <div style={{ fontSize: 11, color: "#999", fontWeight: 400, marginTop: 4 }}>format: .xlsx, .xls, atau .csv</div>
+            {fileName && <div style={{ fontSize: 12, color: "#0FA968", fontWeight: 600, marginTop: 8 }}>✓ {fileName}</div>}
+            <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }}
+              onChange={e => { handleExcelFile(e.target.files[0]); e.target.value = ""; }} />
+          </label>
+          {bulkPreview.length > 0 && (
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#222", marginBottom: 8 }}>{bulkPreview.length} SKU terbaca — cek dulu sebelum simpan:</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
+                {bulkPreview.slice(0, 8).map((e, i) => {
+                  const c = calc(e);
+                  return (
+                    <div key={i} style={{ display: "flex", gap: 10, padding: "8px 12px", background: "#fafafa", borderRadius: 6, fontSize: 12, alignItems: "center", flexWrap: "wrap" }}>
+                      <span style={{ fontWeight: 600, minWidth: 100 }}>{e.sku}</span>
+                      <span style={{ color: "#999" }}>Omset {fmtShort(e.omset)}</span>
+                      <span style={{ color: "#999" }}>Spend {fmtShort(e.spend)}</span>
+                      <span style={{ color: c.netProfit >= 0 ? "#0FA968" : "#E84040" }}>Net {fmtShort(c.netProfit)}</span>
+                      <span style={{ marginLeft: "auto", color: c.statusColor, background: c.statusBg, padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600 }}>{c.status}</span>
+                    </div>
+                  );
+                })}
+                {bulkPreview.length > 8 && <div style={{ fontSize: 11, color: "#999", padding: "2px 4px" }}>+{bulkPreview.length - 8} SKU lainnya siap diimport...</div>}
+              </div>
+              <button onClick={confirmBulk} style={{ padding: "9px 22px", background: "#0FA96820", border: "1px solid #0FA968", borderRadius: 6, cursor: "pointer", fontSize: 13, color: "#0FA968", fontWeight: 600 }}>✓ Konfirmasi & Simpan {bulkPreview.length} SKU</button>
+            </div>
+          )}
         </div>
       )}
 
