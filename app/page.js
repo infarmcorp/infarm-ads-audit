@@ -8,6 +8,10 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 );
 
+const pad = (n) => String(n).padStart(2, '0');
+const now = new Date();
+const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+
 const fmt = (n) => "Rp " + Math.round(Number(n)||0).toLocaleString("id-ID");
 const fmtShort = (n) => {
   const v = Math.round(Number(n)||0);
@@ -18,42 +22,47 @@ const fmtShort = (n) => {
   if (a >= 1_000) return neg+"Rp "+(a/1_000).toFixed(0)+"rb";
   return neg+"Rp "+a;
 };
+const fmtDate = (d) => {
+  if (!d) return "";
+  try { return new Date(d).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }); }
+  catch { return d; }
+};
 
 const calc = (e) => {
   const omset=Number(e.omset)||0, spend=Number(e.spend)||0;
   const order=Number(e.order_count)||0, margin=Number(e.margin)||0;
   const ctr=Number(e.ctr)||0, cr=Number(e.cr)||0;
+  const target=Number(e.target_roas)||0;
   const profit=omset*margin/100;
   const netProfit=profit-spend;
   const roi=spend>0?Math.round(profit/spend*100):0;
   const roas=spend>0?omset/spend:0;
   const aov=order>0?Math.round(omset/order):0;
   const beRoas=margin>0?100/margin:0;
-  let status,statusColor,statusBg;
-  if(netProfit<0){status="RUGI";statusColor="#E84040";statusBg="#E8404015";}
-  else if(roi<150||(ctr>0&&ctr<1)||(cr>0&&cr<0.5)){status="WARNING";statusColor="#F5A623";statusBg="#F5A62315";}
-  else{status="UNTUNG";statusColor="#0FA968";statusBg="#0FA96815";}
-  let diagnosa="";
+  let status,statusColor,statusBg,diagnosa;
   if(netProfit<0){
-    if(ctr>0&&ctr<1) diagnosa="CTR rendah → ganti creative iklan";
-    else if(cr>0&&cr<0.5) diagnosa="CR rendah → evaluasi halaman & harga";
-    else diagnosa="Margin tipis → evaluasi HPP atau stop ads";
+    status="RUGI";statusColor="#E84040";statusBg="#E8404015";
+    if(ctr>0&&ctr<1) diagnosa="Di bawah BEP — CTR rendah, ganti creative";
+    else if(cr>0&&cr<0.5) diagnosa="Di bawah BEP — CR rendah, evaluasi halaman & harga";
+    else diagnosa="Di bawah BEP — margin tipis, evaluasi HPP / stop ads";
+  } else if(target>0 && roas<target){
+    status="WARNING";statusColor="#F5A623";statusBg="#F5A62315";
+    diagnosa=`Di atas BEP, belum capai target ${target.toFixed(1)}x — optimasi untuk naik`;
+  } else if(target>0 && roas>=target){
+    status="UNTUNG";statusColor="#0FA968";statusBg="#0FA96815";
+    diagnosa="Capai target ROAS → pertahankan / scale";
   } else if(roi<150){
-    if(ctr>0&&ctr<1) diagnosa="CTR rendah → refresh creative";
-    else if(cr>0&&cr<0.5) diagnosa="CR rendah → perbaiki product page";
-    else diagnosa="Optimasi bid → turunkan spend bertahap";
-  } else if(roi>=300) diagnosa="Performa excellent → scale budget";
-  else diagnosa="Performa baik → pertahankan";
-  return {profit,netProfit,roi,roas,aov,beRoas,status,statusColor,statusBg,diagnosa};
+    status="WARNING";statusColor="#F5A623";statusBg="#F5A62315";
+    diagnosa="Untung tipis — optimasi bid / turunkan spend bertahap";
+  } else {
+    status="UNTUNG";statusColor="#0FA968";statusBg="#0FA96815";
+    diagnosa=roi>=300?"Performa excellent → scale budget":"Performa baik → pertahankan";
+  }
+  return {profit,netProfit,roi,roas,aov,beRoas,target,status,statusColor,statusBg,diagnosa};
 };
 
-const PERIODS=["Mingguan","Bulanan","Quarterly"];
-const WEEKS=["Minggu 1","Minggu 2","Minggu 3","Minggu 4"];
-const MONTHS=["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Ags","Sep","Okt","Nov","Des"];
-const QUARTERS=["Q1","Q2","Q3","Q4"];
 const PLATFORMS=["TikTok","Shopee"];
-const now=new Date();
-const EMPTY={platform:"TikTok",sku:"",omset:"",spend:"",order_count:"",margin:"",ctr:"",cr:"",week:"Minggu 1",month:MONTHS[now.getMonth()],quarter:"Q2"};
+const EMPTY={platform:"TikTok",sku:"",omset:"",spend:"",order_count:"",margin:"",ctr:"",cr:"",target_roas:"",tanggal:todayStr};
 
 const toPayload = (e) => ({
   platform: e.platform,
@@ -64,9 +73,8 @@ const toPayload = (e) => ({
   margin: e.margin === "" || e.margin == null ? null : Number(e.margin),
   ctr: e.ctr === "" || e.ctr == null ? null : Number(e.ctr),
   cr: e.cr === "" || e.cr == null ? null : Number(e.cr),
-  week: e.week,
-  month: e.month,
-  quarter: e.quarter,
+  target_roas: e.target_roas === "" || e.target_roas == null ? null : Number(e.target_roas),
+  tanggal: e.tanggal || null,
 });
 
 function InfarmLogo({ size = 46 }) {
@@ -92,33 +100,29 @@ export default function Dashboard() {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
-  const [periodType, setPeriodType] = useState("Mingguan");
-  const [periodValue, setPeriodValue] = useState("Minggu 1");
   const [viewPlatform, setViewPlatform] = useState("Semua");
   const [filter, setFilter] = useState("Semua");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState("desc");
   const [mode, setMode] = useState(null);
   const [form, setForm] = useState(EMPTY);
   const [editId, setEditId] = useState(null);
   const [bulkPreview, setBulkPreview] = useState([]);
   const [bulkPlatform, setBulkPlatform] = useState("TikTok");
+  const [bulkDate, setBulkDate] = useState(todayStr);
   const [fileName, setFileName] = useState("");
   const [saved, setSaved] = useState(false);
 
   const fetchData = async () => {
     try {
-      setLoading(true);
-      setErrorMsg("");
-      const { data, error } = await supabase
-        .from('ads_entries')
-        .select('*')
-        .order('created_at', { ascending: false });
+      setLoading(true); setErrorMsg("");
+      const { data, error } = await supabase.from('ads_entries').select('*').order('created_at', { ascending: false });
       if (error) throw error;
       setEntries(data || []);
-    } catch (err) {
-      setErrorMsg("Gagal ambil data: " + err.message);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) { setErrorMsg("Gagal ambil data: " + err.message); }
+    finally { setLoading(false); }
   };
 
   useEffect(() => { fetchData(); }, []);
@@ -136,23 +140,18 @@ export default function Dashboard() {
         const { error } = await supabase.from('ads_entries').insert([toPayload(form)]);
         if (error) throw error;
       }
-      await fetchData();
-      setForm(EMPTY); setMode(null); setEditId(null); flash();
-    } catch (err) {
-      setErrorMsg("Gagal simpan: " + err.message);
-    }
+      await fetchData(); setForm(EMPTY); setMode(null); setEditId(null); flash();
+    } catch (err) { setErrorMsg("Gagal simpan: " + err.message); }
   };
 
-  const startEdit = (e) => { setForm({ ...e }); setEditId(e.id); setMode("single"); };
+  const startEdit = (e) => { setForm({ ...EMPTY, ...e, tanggal: e.tanggal || todayStr }); setEditId(e.id); setMode("single"); };
 
   const del = async (id) => {
     try {
       const { error } = await supabase.from('ads_entries').delete().eq('id', id);
       if (error) throw error;
       await fetchData();
-    } catch (err) {
-      setErrorMsg("Gagal hapus: " + err.message);
-    }
+    } catch (err) { setErrorMsg("Gagal hapus: " + err.message); }
   };
 
   const handleExcelFile = async (file) => {
@@ -169,38 +168,71 @@ export default function Dashboard() {
         platform: bulkPlatform,
         sku: String(r[0] ?? "").trim(),
         omset: r[1] ?? "", spend: r[2] ?? "", order_count: r[3] ?? "",
-        margin: r[4] ?? "", ctr: r[5] ?? "", cr: r[6] ?? "",
-        week: form.week, month: form.month, quarter: form.quarter,
+        margin: r[4] ?? "", ctr: r[5] ?? "", cr: r[6] ?? "", target_roas: r[7] ?? "",
+        tanggal: bulkDate,
       })).filter(e => e.sku && Number.isFinite(Number(e.omset)));
-      if (parsed.length === 0) {
-        setErrorMsg("Tidak ada baris valid. Cek urutan kolom: SKU | Omset | Spend | Order | Margin | CTR | CR");
-        return;
-      }
+      if (parsed.length === 0) { setErrorMsg("Tidak ada baris valid. Cek urutan kolom: SKU | Omset | Spend | Order | Margin | CTR | CR | TargetROAS(opsional)"); return; }
       setBulkPreview(parsed);
-    } catch (err) {
-      setErrorMsg("Gagal baca file Excel: " + err.message);
-    }
+    } catch (err) { setErrorMsg("Gagal baca file Excel: " + err.message); }
   };
 
   const confirmBulk = async () => {
     try {
       setErrorMsg("");
-      const payload = bulkPreview.map(toPayload);
-      const { error } = await supabase.from('ads_entries').insert(payload);
+      const { error } = await supabase.from('ads_entries').insert(bulkPreview.map(toPayload));
       if (error) throw error;
-      await fetchData();
-      setBulkPreview([]); setFileName(""); setMode(null); flash();
-    } catch (err) {
-      setErrorMsg("Gagal import: " + err.message);
-    }
+      await fetchData(); setBulkPreview([]); setFileName(""); setMode(null); flash();
+    } catch (err) { setErrorMsg("Gagal import: " + err.message); }
   };
 
-  const pField = periodType === "Mingguan" ? "week" : periodType === "Bulanan" ? "month" : "quarter";
-  const pOpts = periodType === "Mingguan" ? WEEKS : periodType === "Bulanan" ? MONTHS : QUARTERS;
+  const setThisMonth = () => {
+    const y = now.getFullYear(), m = now.getMonth();
+    const lastDay = new Date(y, m + 1, 0).getDate();
+    setDateFrom(`${y}-${pad(m + 1)}-01`);
+    setDateTo(`${y}-${pad(m + 1)}-${pad(lastDay)}`);
+  };
 
-  const byPeriod = entries.filter(e => e[pField] === periodValue);
-  const byPlat = viewPlatform === "Semua" ? byPeriod : byPeriod.filter(e => e.platform === viewPlatform);
-  const displayed = filter === "Semua" ? byPlat : byPlat.filter(e => calc(e).status === filter);
+  const inRange = (e) => {
+    if (!dateFrom && !dateTo) return true;
+    if (!e.tanggal) return false;
+    if (dateFrom && e.tanggal < dateFrom) return false;
+    if (dateTo && e.tanggal > dateTo) return false;
+    return true;
+  };
+
+  const byTime = entries.filter(inRange);
+  const byPlat = viewPlatform === "Semua" ? byTime : byTime.filter(e => e.platform === viewPlatform);
+  const filtered = filter === "Semua" ? byPlat : byPlat.filter(e => calc(e).status === filter);
+
+  const columns = [
+    { label: "Platform", align: "left", key: "platform", val: e => e.platform },
+    { label: "SKU", align: "left", key: "sku", val: e => e.sku },
+    { label: "Omset", align: "right", key: "omset", val: e => Number(e.omset) || 0 },
+    { label: "Profit", align: "right", key: "profit", val: e => calc(e).profit },
+    { label: "Spend Ads", align: "right", key: "spend", val: e => Number(e.spend) || 0 },
+    { label: "Net Profit", align: "right", key: "net", val: e => calc(e).netProfit },
+    { label: "BEP ROAS", align: "right", key: "bep", val: e => calc(e).beRoas },
+    { label: "Actual ROAS", align: "right", key: "roas", val: e => calc(e).roas },
+    { label: "Target ROAS", align: "right", key: "target", val: e => Number(e.target_roas) || 0 },
+    { label: "Status", align: "left", key: "status", val: e => ({ RUGI: 0, WARNING: 1, UNTUNG: 2 }[calc(e).status]) },
+    { label: "Diagnosa", align: "left", key: null },
+    { label: "", align: "left", key: null },
+  ];
+
+  let displayed = [...filtered];
+  if (sortKey) {
+    const col = columns.find(c => c.key === sortKey);
+    displayed.sort((a, b) => {
+      const va = col.val(a), vb = col.val(b);
+      if (typeof va === "string") return sortDir === "asc" ? va.localeCompare(vb) : vb.localeCompare(va);
+      return sortDir === "asc" ? va - vb : vb - va;
+    });
+  }
+  const toggleSort = (key) => {
+    if (!key) return;
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("desc"); }
+  };
 
   const totOmset = byPlat.reduce((s, e) => s + (Number(e.omset) || 0), 0);
   const totSpend = byPlat.reduce((s, e) => s + (Number(e.spend) || 0), 0);
@@ -233,7 +265,7 @@ export default function Dashboard() {
 
   return (
     <div style={{ background: "#F5F6F8", minHeight: "100vh", fontFamily: "system-ui, sans-serif" }}>
-      <div style={{ maxWidth: "1440px", margin: "0 auto", padding: "1.5rem 1.5rem 3rem" }}>
+      <div style={{ maxWidth: "1480px", margin: "0 auto", padding: "1.5rem 1.5rem 3rem" }}>
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexWrap: "wrap", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
@@ -249,9 +281,7 @@ export default function Dashboard() {
         </div>
 
         {errorMsg && (
-          <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 10, padding: "11px 15px", marginBottom: 14, fontSize: 13, color: "#DC2626" }}>
-            {errorMsg}
-          </div>
+          <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 10, padding: "11px 15px", marginBottom: 14, fontSize: 13, color: "#DC2626" }}>{errorMsg}</div>
         )}
 
         <div style={{ display: "flex", gap: 14, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
@@ -260,15 +290,13 @@ export default function Dashboard() {
               <button key={p} onClick={() => setViewPlatform(p)} style={tabBtn(viewPlatform === p, p === "TikTok" ? "#E84040" : p === "Shopee" ? "#EF7F00" : "#0FA968")}>{p}</button>
             ))}
           </div>
-          <div style={{ display: "flex", gap: 6, background: "#fff", padding: 4, borderRadius: 10, border: "1px solid #ECEEF1" }}>
-            {PERIODS.map(p => (
-              <button key={p} onClick={() => { setPeriodType(p); setPeriodValue(p === "Mingguan" ? "Minggu 1" : p === "Bulanan" ? MONTHS[now.getMonth()] : "Q2"); }} style={tabBtn(periodType === p, "#0096DE")}>{p}</button>
-            ))}
-          </div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {pOpts.map(opt => (
-              <button key={opt} onClick={() => setPeriodValue(opt)} style={tabBtn(periodValue === opt, "#0096DE")}>{opt}</button>
-            ))}
+          <div style={{ display: "flex", gap: 8, background: "#fff", padding: "6px 10px", borderRadius: 10, border: "1px solid #ECEEF1", alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontSize: 11, color: "#7A828D", fontWeight: 600 }}>RENTANG</span>
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ ...inp, width: "auto", padding: "5px 8px", fontSize: 12 }} />
+            <span style={{ color: "#9AA1AB" }}>→</span>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ ...inp, width: "auto", padding: "5px 8px", fontSize: 12 }} />
+            <button onClick={setThisMonth} style={tabBtn(false, "#0096DE")}>Bulan Ini</button>
+            {(dateFrom || dateTo) && <button onClick={() => { setDateFrom(""); setDateTo(""); }} style={tabBtn(false, "#5B6470")}>Reset</button>}
           </div>
         </div>
 
@@ -299,31 +327,30 @@ export default function Dashboard() {
         {mode === "bulk" && (
           <div style={{ ...card, marginBottom: 14 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: "#1F2733", marginBottom: 14 }}>Upload Data dari File Excel</div>
-            <div style={{ marginBottom: 12 }}>
-              <span style={lbl}>Platform</span>
-              <div style={{ display: "flex", gap: 6 }}>
-                {PLATFORMS.map(p => (<button key={p} onClick={() => setBulkPlatform(p)} style={tabBtn(bulkPlatform === p, p === "TikTok" ? "#E84040" : "#EF7F00")}>{p}</button>))}
+            <div style={{ display: "flex", gap: 20, flexWrap: "wrap", marginBottom: 12 }}>
+              <div>
+                <span style={lbl}>Platform</span>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {PLATFORMS.map(p => (<button key={p} onClick={() => setBulkPlatform(p)} style={tabBtn(bulkPlatform === p, p === "TikTok" ? "#E84040" : "#EF7F00")}>{p}</button>))}
+                </div>
               </div>
-            </div>
-            <div style={{ marginBottom: 12 }}>
-              <span style={lbl}>Periode</span>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {pOpts.map(opt => (<button key={opt} onClick={() => setForm(f => ({ ...f, [pField]: opt }))} style={tabBtn(form[pField] === opt, "#0096DE")}>{opt}</button>))}
+              <div>
+                <span style={lbl}>Tanggal data</span>
+                <input type="date" value={bulkDate} onChange={e => setBulkDate(e.target.value)} style={{ ...inp, width: "auto" }} />
               </div>
             </div>
             <div style={{ padding: "9px 13px", background: "#F5F6F8", borderRadius: 8, fontSize: 11, color: "#5B6470", marginBottom: 12 }}>
-              Urutan kolom di Excel → <strong>SKU | Omset | Spend | Order | Margin% | CTR% | CR%</strong>
+              Urutan kolom di Excel → <strong>SKU | Omset | Spend | Order | Margin% | CTR% | CR% | TargetROAS</strong> <span style={{ color: "#9AA1AB" }}>(TargetROAS opsional)</span>
             </div>
             <label style={{ display: "block", textAlign: "center", padding: "28px 16px", background: "#0FA9680D", border: "2px dashed #0FA968", borderRadius: 12, cursor: "pointer", fontSize: 14, color: "#0FA968", fontWeight: 600, marginBottom: 14 }}>
               📁 Klik untuk pilih File Excel
               <div style={{ fontSize: 11, color: "#9AA1AB", fontWeight: 400, marginTop: 4 }}>format: .xlsx, .xls, atau .csv</div>
               {fileName && <div style={{ fontSize: 12, color: "#0FA968", fontWeight: 600, marginTop: 8 }}>✓ {fileName}</div>}
-              <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }}
-                onChange={e => { handleExcelFile(e.target.files[0]); e.target.value = ""; }} />
+              <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={e => { handleExcelFile(e.target.files[0]); e.target.value = ""; }} />
             </label>
             {bulkPreview.length > 0 && (
               <div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: "#1F2733", marginBottom: 8 }}>{bulkPreview.length} SKU terbaca — cek dulu sebelum simpan:</div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#1F2733", marginBottom: 8 }}>{bulkPreview.length} SKU terbaca ({fmtDate(bulkDate)}) — cek dulu:</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 14 }}>
                   {bulkPreview.slice(0, 8).map((e, i) => {
                     const c = calc(e);
@@ -337,7 +364,7 @@ export default function Dashboard() {
                       </div>
                     );
                   })}
-                  {bulkPreview.length > 8 && <div style={{ fontSize: 11, color: "#9AA1AB", padding: "2px 4px" }}>+{bulkPreview.length - 8} SKU lainnya siap diimport...</div>}
+                  {bulkPreview.length > 8 && <div style={{ fontSize: 11, color: "#9AA1AB", padding: "2px 4px" }}>+{bulkPreview.length - 8} SKU lainnya...</div>}
                 </div>
                 <button onClick={confirmBulk} style={{ padding: "10px 22px", background: "#0FA968", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 13, color: "#fff", fontWeight: 600 }}>✓ Konfirmasi & Simpan {bulkPreview.length} SKU</button>
               </div>
@@ -349,10 +376,16 @@ export default function Dashboard() {
           <div style={{ ...card, marginBottom: 14 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: "#1F2733", marginBottom: 14 }}>{editId !== null ? "Edit SKU" : "Tambah SKU"}</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-              <div style={{ gridColumn: "1/-1" }}>
-                <span style={lbl}>Platform</span>
-                <div style={{ display: "flex", gap: 6 }}>
-                  {PLATFORMS.map(p => (<button key={p} onClick={() => setForm(f => ({ ...f, platform: p }))} style={tabBtn(form.platform === p, p === "TikTok" ? "#E84040" : "#EF7F00")}>{p}</button>))}
+              <div style={{ gridColumn: "1/-1", display: "flex", gap: 16, flexWrap: "wrap" }}>
+                <div>
+                  <span style={lbl}>Platform</span>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {PLATFORMS.map(p => (<button key={p} onClick={() => setForm(f => ({ ...f, platform: p }))} style={tabBtn(form.platform === p, p === "TikTok" ? "#E84040" : "#EF7F00")}>{p}</button>))}
+                  </div>
+                </div>
+                <div>
+                  <span style={lbl}>Tanggal</span>
+                  <input type="date" value={form.tanggal} onChange={e => setForm(f => ({ ...f, tanggal: e.target.value }))} style={{ ...inp, width: "auto" }} />
                 </div>
               </div>
               <div style={{ gridColumn: "1/-1" }}>
@@ -363,6 +396,7 @@ export default function Dashboard() {
                 { key: "omset", label: "Omset (Rp)" }, { key: "spend", label: "Spend Iklan (Rp)" },
                 { key: "order_count", label: "Jumlah Order" }, { key: "margin", label: "% Margin" },
                 { key: "ctr", label: "CTR (%)" }, { key: "cr", label: "CR (%)" },
+                { key: "target_roas", label: "Target ROAS (x)" },
               ].map(({ key, label }) => (
                 <div key={key}>
                   <span style={lbl}>{label}</span>
@@ -374,8 +408,9 @@ export default function Dashboard() {
               <div style={{ padding: "11px 15px", background: "#F5F6F8", borderRadius: 8, display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 12, fontSize: 12, alignItems: "center" }}>
                 <span>Profit: <strong>{fmtShort(previewCalc.profit)}</strong></span>
                 <span>Net: <strong style={{ color: previewCalc.netProfit >= 0 ? "#0FA968" : "#E84040" }}>{fmtShort(previewCalc.netProfit)}</strong></span>
-                <span>ROAS: <strong>{previewCalc.roas.toFixed(1)}x</strong></span>
-                <span>Target ROAS: <strong>{previewCalc.beRoas > 0 ? previewCalc.beRoas.toFixed(1) + "x" : "—"}</strong></span>
+                <span>BEP ROAS: <strong>{previewCalc.beRoas > 0 ? previewCalc.beRoas.toFixed(1) + "x" : "—"}</strong></span>
+                <span>Actual: <strong>{previewCalc.roas.toFixed(1)}x</strong></span>
+                <span>Target: <strong>{previewCalc.target > 0 ? previewCalc.target.toFixed(1) + "x" : "—"}</strong></span>
                 <span>Status: <strong style={{ color: previewCalc.statusColor }}>{previewCalc.status}</strong></span>
               </div>
             )}
@@ -390,7 +425,7 @@ export default function Dashboard() {
           <div style={{ ...card, textAlign: "center", padding: "2.5rem" }}>Loading...</div>
         ) : displayed.length === 0 ? (
           <div style={{ ...card, textAlign: "center", padding: "3rem 1rem" }}>
-            <div style={{ fontSize: 13, color: "#9AA1AB" }}>Belum ada data untuk periode ini</div>
+            <div style={{ fontSize: 13, color: "#9AA1AB" }}>Belum ada data untuk filter ini</div>
           </div>
         ) : (
           <div style={{ ...card, padding: 0, overflow: "hidden" }}>
@@ -398,8 +433,10 @@ export default function Dashboard() {
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <thead>
                   <tr style={{ background: "#FAFBFC", borderBottom: "1px solid #ECEEF1" }}>
-                    {["Platform", "SKU", "Omset", "Profit", "Spend Ads", "Net Profit", "ROAS", "Target ROAS", "Status", "Diagnosa", ""].map((h, i) => (
-                      <th key={i} style={{ padding: "12px 14px", textAlign: i <= 1 || i >= 8 ? "left" : "right", fontSize: 10, color: "#9AA1AB", fontWeight: 700, textTransform: "uppercase", whiteSpace: "nowrap", letterSpacing: "0.4px" }}>{h}</th>
+                    {columns.map((col, i) => (
+                      <th key={i} onClick={() => toggleSort(col.key)} style={{ padding: "12px 14px", textAlign: col.align, fontSize: 10, color: sortKey === col.key ? "#0096DE" : "#9AA1AB", fontWeight: 700, textTransform: "uppercase", whiteSpace: "nowrap", letterSpacing: "0.4px", cursor: col.key ? "pointer" : "default", userSelect: "none" }}>
+                        {col.label}{col.key && sortKey === col.key ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
+                      </th>
                     ))}
                   </tr>
                 </thead>
@@ -411,17 +448,21 @@ export default function Dashboard() {
                         <td style={{ padding: "11px 14px" }}>
                           <span style={{ fontSize: 10, padding: "3px 7px", borderRadius: 5, fontWeight: 600, background: e.platform === "TikTok" ? "#E8404018" : "#EF7F0018", color: e.platform === "TikTok" ? "#E84040" : "#EF7F00" }}>{e.platform}</span>
                         </td>
-                        <td style={{ padding: "11px 14px", fontWeight: 600, color: "#1F2733" }}>{e.sku}</td>
+                        <td style={{ padding: "11px 14px" }}>
+                          <div style={{ fontWeight: 600, color: "#1F2733" }}>{e.sku}</div>
+                          {e.tanggal && <div style={{ fontSize: 10, color: "#9AA1AB", marginTop: 2 }}>{fmtDate(e.tanggal)}</div>}
+                        </td>
                         <td style={{ padding: "11px 14px", textAlign: "right", color: "#1F2733" }}>{fmtShort(e.omset)}</td>
                         <td style={{ padding: "11px 14px", textAlign: "right", color: "#1F2733" }}>{fmtShort(c.profit)}</td>
                         <td style={{ padding: "11px 14px", textAlign: "right", color: "#D97706" }}>{fmtShort(e.spend)}</td>
                         <td style={{ padding: "11px 14px", textAlign: "right", color: c.netProfit >= 0 ? "#0FA968" : "#E84040", fontWeight: 700 }}>{fmtShort(c.netProfit)}</td>
-                        <td style={{ padding: "11px 14px", textAlign: "right", color: c.statusColor, fontWeight: 700 }}>{c.roas.toFixed(1)}x</td>
                         <td style={{ padding: "11px 14px", textAlign: "right", color: "#7A828D" }}>{c.beRoas > 0 ? c.beRoas.toFixed(1) + "x" : "—"}</td>
+                        <td style={{ padding: "11px 14px", textAlign: "right", color: c.statusColor, fontWeight: 700 }}>{c.roas.toFixed(1)}x</td>
+                        <td style={{ padding: "11px 14px", textAlign: "right", color: c.target > 0 ? "#0096DE" : "#C5CAD1", fontWeight: 600 }}>{c.target > 0 ? c.target.toFixed(1) + "x" : "—"}</td>
                         <td style={{ padding: "11px 14px" }}>
                           <span style={{ fontSize: 10, padding: "3px 9px", borderRadius: 5, fontWeight: 700, color: c.statusColor, background: c.statusBg }}>{c.status}</span>
                         </td>
-                        <td style={{ padding: "11px 14px", fontSize: 11, color: "#7A828D", minWidth: 165 }}>{c.diagnosa}</td>
+                        <td style={{ padding: "11px 14px", fontSize: 11, color: "#7A828D", minWidth: 180 }}>{c.diagnosa}</td>
                         <td style={{ padding: "11px 14px", whiteSpace: "nowrap" }}>
                           <button onClick={() => startEdit(e)} style={{ background: "none", border: "none", cursor: "pointer", color: "#7A828D", fontSize: 14, marginRight: 8 }}>✎</button>
                           <button onClick={() => del(e.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#E84040", fontSize: 14 }}>🗑</button>
