@@ -269,7 +269,7 @@ export default function Dashboard() {
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexWrap: "wrap", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <img src="/infarm-logo.png.png" alt="Infarm.id" style={{ height: 56, width: "auto", display: "block" }} />
+            <img src="/infarm-logo.png" alt="Infarm.id" style={{ height: 56, width: "auto", display: "block" }} />
             <div>
               <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: "#7A828D", textTransform: "uppercase" }}>Ads Audit</div>
               <div style={{ fontSize: 21, fontWeight: 700, color: "#1F2733", lineHeight: 1.2 }}>Dashboard Audit Iklan</div>
