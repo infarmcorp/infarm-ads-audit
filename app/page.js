@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -263,6 +264,21 @@ export default function Dashboard() {
     { label: "SKU Rugi", val: rugiCount, sub: `${warnCount} warning`, grad: "linear-gradient(135deg,#EC4899,#DB2777)" },
   ];
 
+  const untungCount = byPlat.length - rugiCount - warnCount;
+  const statusData = [
+    { name: "Untung", value: untungCount, color: "#0FA968" },
+    { name: "Warning", value: warnCount, color: "#F5A623" },
+    { name: "Rugi", value: rugiCount, color: "#E84040" },
+  ].filter(d => d.value > 0);
+
+  const bySku = {};
+  byPlat.forEach(e => {
+    const cc = calc(e);
+    if (!bySku[e.sku]) bySku[e.sku] = { name: e.sku, net: 0 };
+    bySku[e.sku].net += cc.netProfit;
+  });
+  const netData = Object.values(bySku).sort((a, b) => b.net - a.net).slice(0, 10);
+
   return (
     <div style={{ background: "#F5F6F8", minHeight: "100vh", fontFamily: "system-ui, sans-serif" }}>
       <div style={{ maxWidth: "1480px", margin: "0 auto", padding: "1.5rem 1.5rem 3rem" }}>
@@ -307,6 +323,36 @@ export default function Dashboard() {
             </div>
           ))}
         </div>
+
+        {byPlat.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 14, marginBottom: 18 }}>
+            <div style={card}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#1F2733", marginBottom: 10 }}>Distribusi Status SKU</div>
+              <ResponsiveContainer width="100%" height={250}>
+                <PieChart>
+                  <Pie data={statusData} dataKey="value" nameKey="name" innerRadius={55} outerRadius={90} paddingAngle={2}>
+                    {statusData.map((d, i) => <Cell key={i} fill={d.color} />)}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div style={card}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#1F2733", marginBottom: 10 }}>Net Profit per SKU (Top 10)</div>
+              <ResponsiveContainer width="100%" height={250}>
+                <BarChart data={netData} layout="vertical" margin={{ left: 10, right: 20, top: 0, bottom: 0 }}>
+                  <XAxis type="number" tickFormatter={fmtShort} tick={{ fontSize: 10 }} />
+                  <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 10 }} />
+                  <Tooltip formatter={(v) => fmt(v)} />
+                  <Bar dataKey="net" radius={[0, 4, 4, 0]}>
+                    {netData.map((d, i) => <Cell key={i} fill={d.net >= 0 ? "#0FA968" : "#E84040"} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
 
         <div style={{ display: "flex", gap: 8, justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap" }}>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
